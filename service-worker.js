@@ -1,4 +1,4 @@
-const CACHE_NAME = 'stopwatch-v1';
+const CACHE_NAME = 'klap_mes_wifi';
 const urlsToCache = [
   '/',
   '/index.html',
@@ -54,3 +54,4 @@ self.addEventListener('activate', (event) => {
   );
 
 });
+
