@@ -1,6 +1,6 @@
 {
-  "name": K-LAP ｸﾎﾞﾌｧｸ",
-  "short_name": "K-LAP ｸﾎﾞﾌｧｸ",
+  "name": "K-LAP_mes_wifi",
+  "short_name": "K-LAP_mes_wifi",
   "description": "BLEとGPSに対応したラップタイマーアプリです。",
   "start_url": "/index.html",
   "display": "fullscreen",
@@ -9,14 +9,15 @@
   "theme_color": "#2196F3",
   "icons": [
     {
-      "src": "/icon-192.png",
+      "src": "/icon-192r.png",
       "sizes": "192x192",
       "type": "image/png"
     },
     {
-      "src": "/icon-512.png",
+      "src": "/icon-512r.png",
       "sizes": "512x512",
       "type": "image/png"
     }
   ]
+
 }
