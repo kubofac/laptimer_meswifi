@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, user-scalable=no">
     <title>KLAP_receiver_WiFi</title>
     <link rel="manifest" href="/manifest.json">
+    <!-- Tailwind CSSの代わりに、元のコードのCSSを使用 -->
     <style>
         html, body {
             height: 100%;
@@ -254,7 +255,7 @@
              <div id="time-display-column">
                  <div id='display1'>00:00.000</div>
                  <div id='display'>00:00:00.000</div>
-            </div>
+             </div>
 
             <div id="pitMessageDisplay"></div>
         </div>
@@ -282,6 +283,8 @@
 // ----------------------------------------------------
 const POLL_INTERVAL = 3000; // 3秒間隔でメッセージを取得
 const API_ENDPOINT_KEY = 'pitMessageApiUrl';
+// デフォルトのAPIエンドポイントURLを設定 (ユーザーの要求に応じて追加)
+const DEFAULT_API_URL = 'http://192.168.4.1/message'; 
 
 let pollingTimerId = null;
 let pitMessageApiUrl = '';
@@ -581,7 +584,7 @@ function onGpsPositionUpdate(position) {
     const currentLon = position.coords.longitude;
     const currentTime = Date.now();
     
-    // ヘルパー関数群（省略）
+    // ヘルパー関数群（省略） - ジオロケーション計算関数はここに配置
     const calculateDistance = (lat1, lon1, lat2, lon2) => {
         const R = 6371e3;
         const φ1 = lat1 * Math.PI / 180;
@@ -797,12 +800,17 @@ function stopPolling() {
 }
 
 function setApiUrl() {
-    // prompt()はユーザー操作が必要なため、簡易的なデモ用
-    const newUrl = prompt("PITメッセージ取得用のAPI URLを入力してください (例: https://example.com/api/message)", pitMessageApiUrl);
+    // ユーザー要求に基づき、デフォルト値を設定
+    const defaultValue = pitMessageApiUrl || DEFAULT_API_URL;
+    
+    // NOTE: prompt()の使用は非推奨ですが、元のコードの構造を維持しています。
+    // 実際のアプリケーションでは、カスタムモーダルを使用してください。
+    const newUrl = prompt("PITメッセージ取得用のAPI URLを入力してください (例: http://192.168.4.1/message)", defaultValue);
+    
     if (newUrl) {
         localStorage.setItem(API_ENDPOINT_KEY, newUrl);
         pitMessageApiUrl = newUrl;
-        displayPitMessage(`URLを設定しました。`);
+        displayPitMessage(`URLを設定しました: ${newUrl}`);
         return true;
     }
     return false;
@@ -869,4 +877,5 @@ window.addEventListener('load', () => {
 });
 </script>
 </body>
+
 </html>
