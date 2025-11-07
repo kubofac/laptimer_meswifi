@@ -181,6 +181,7 @@
         .wifi-disconnected { background-color: #ff4d4d !important; border-color: #993333;}
         .wifi-connected { background-color: #007aff !important; border-color: #0066cc;}
         .wifi-connecting { background-color: #ffcc00 !important; border-color: #cc9900;}
+        .wifi-error { background-color: #ff0000 !important; border-color: #cc0000;} /* エラー表示追加 */
 
         /* debug-overlay */
         #debug-overlay {
@@ -282,6 +283,10 @@
 // ★★★ WebSocket定数と変数 ★★★
 // ----------------------------------------------------
 const WS_PORT = '81'; // ESP32のWebSocketポート (デフォルト: 81)
+// サーバー側の設定によっては、Webサーバーと同じ80番ポートを使うこともあります。
+// 81番で接続できない場合、コードを修正して80番を試す必要があります。
+// 例: const WS_PORT = '80'; 
+
 const API_ENDPOINT_KEY = 'pitMessageApiUrl'; // 設定はURL形式で保存するが、実際はホスト名として使用
 
 let socket = null;
@@ -551,8 +556,6 @@ const getSettings = () => {
     // --- WebSocket接続ホスト名の読み込み (API URLとして保存されているがホスト名/IPとして扱う) ---
     const storedApiUrl = localStorage.getItem(API_ENDPOINT_KEY);
     if (storedApiUrl) {
-        // URL全体ではなく、ホスト名/IPアドレス部分のみを使用することをユーザーに伝える
-        // ESP32のSoftAP環境ではIPアドレス(192.168.4.1)が保存されていることを想定
         console.log(`Loaded WS Host/IP: ${storedApiUrl}`);
     } else {
         console.log("WS Host/IP not set in localStorage.");
@@ -693,7 +696,7 @@ function onGpsError(error) {
 }
 
 // ----------------------------------------------------
-// ★★★ WebSocket関連関数（Pollingからの置き換え） ★★★
+// ★★★ WebSocket関連関数（デバッグ強化） ★★★
 // ----------------------------------------------------
 
 // Wi-Fiボタンの表示を更新する関数
@@ -701,35 +704,45 @@ const updateWifiButtonDisplay = () => {
     if (!elem.wifiButton) return;
 
     if (socket && socket.readyState === WebSocket.OPEN) {
-        elem.wifiButton.classList.remove('wifi-disconnected', 'wifi-connecting');
+        elem.wifiButton.classList.remove('wifi-disconnected', 'wifi-connecting', 'wifi-error');
         elem.wifiButton.classList.add('wifi-connected');
         elem.wifiButton.textContent = 'Wi-Fi (接続中)';
     } else if (socket && socket.readyState === WebSocket.CONNECTING) {
-        elem.wifiButton.classList.remove('wifi-disconnected', 'wifi-connected');
+        elem.wifiButton.classList.remove('wifi-disconnected', 'wifi-connected', 'wifi-error');
         elem.wifiButton.classList.add('wifi-connecting');
         elem.wifiButton.textContent = 'Wi-Fi (接続試行中)';
+    } else if (socket && socket.readyState === WebSocket.CLOSED) {
+        elem.wifiButton.classList.remove('wifi-connected', 'wifi-connecting');
+        elem.wifiButton.classList.add('wifi-disconnected', 'wifi-error');
+        elem.wifiButton.textContent = 'Wi-Fi (切断/エラー)';
     } else {
         const storedHost = localStorage.getItem(API_ENDPOINT_KEY);
-        elem.wifiButton.classList.remove('wifi-connected', 'wifi-connecting');
+        elem.wifiButton.classList.remove('wifi-connected', 'wifi-connecting', 'wifi-error');
         elem.wifiButton.classList.add('wifi-disconnected');
         elem.wifiButton.textContent = storedHost ? 'Wi-Fi (切断)' : 'Wi-Fi (未設定)';
     }
 }
 
 // ピットメッセージの表示を制御する関数
-const displayPitMessage = (message) => {
+const displayPitMessage = (message, isError = false) => {
     if (elem.pitMessageDisplay) {
         const trimmedMessage = message ? message.trim() : '';
         
         if (trimmedMessage === '' || trimmedMessage.toLowerCase() === 'なし' || trimmedMessage.toLowerCase() === 'clear') {
             elem.pitMessageDisplay.textContent = '';
             elem.pitMessageDisplay.style.display = 'none';
-            if (elem.debugInfo) elem.debugInfo.innerHTML += `<br><span style="color: #666666;">[WS] メッセージクリア</span>`;
         } else {
             elem.pitMessageDisplay.textContent = trimmedMessage;
             elem.pitMessageDisplay.style.display = 'block';
-            if (elem.debugInfo) elem.debugInfo.innerHTML += `<br><span style="color: #ffeb3b;">[WS] ${trimmedMessage}</span>`;
+            if (isError) {
+                elem.pitMessageDisplay.style.color = '#ff4d4d'; // 赤色
+            } else {
+                elem.pitMessageDisplay.style.color = '#ffeb3b'; // 黄色
+            }
         }
+        
+        // デバッグ情報にもログ出力
+        if (elem.debugInfo) elem.debugInfo.innerHTML += `<br><span style="color: ${isError ? '#ff4d4d' : '#999999'};">[WS Log] ${trimmedMessage}</span>`;
     }
 }
 
@@ -743,6 +756,7 @@ function connectWebSocket() {
     const storedHost = localStorage.getItem(API_ENDPOINT_KEY);
     if (!storedHost) {
         console.log("WebSocket接続先ホスト/IPが未設定です。");
+        displayPitMessage('Wi-Fiホストが未設定です', true);
         updateWifiButtonDisplay();
         return;
     }
@@ -758,6 +772,7 @@ function connectWebSocket() {
     try {
         socket = new WebSocket(wsUrl);
         updateWifiButtonDisplay();
+        displayPitMessage(`接続試行中: ${wsUrl}`, false);
         console.log(`WebSocket接続を試行中... ${wsUrl}`);
 
         socket.onopen = function() {
@@ -774,30 +789,38 @@ function connectWebSocket() {
         };
 
         socket.onclose = function(event) {
-            console.warn('❌ WebSocket接続切断:', event.reason);
+            // 正常終了 (コード 1000) でない場合、または明示的な切断でない場合は再接続を試行
+            const shouldRetry = event.code !== 1000 && socket !== null;
+            
+            console.warn(`❌ WebSocket接続切断: コード ${event.code}, 理由: ${event.reason}`);
             updateWifiButtonDisplay();
             
-            // 接続試行タイマーが設定されている場合はクリア
-            if (connectAttemptTimerId) {
-                clearTimeout(connectAttemptTimerId);
-            }
+            if (shouldRetry) {
+                // 接続試行タイマーが設定されている場合はクリア
+                if (connectAttemptTimerId) {
+                    clearTimeout(connectAttemptTimerId);
+                }
 
-            // 指数関数的なバックオフで再接続を試行
-            const delay = Math.min(1000 * Math.pow(2, retryCount), 30000); 
-            retryCount++;
-            console.log(`再接続を ${delay / 1000}秒後に試行します (リトライ回数: ${retryCount})`);
-            
-            connectAttemptTimerId = setTimeout(connectWebSocket, delay); 
+                const delay = Math.min(1000 * Math.pow(2, retryCount), 30000); 
+                retryCount++;
+                displayPitMessage(`接続エラー。${delay / 1000}秒後に再試行 (${retryCount}回目)`, true);
+                
+                connectAttemptTimerId = setTimeout(connectWebSocket, delay); 
+            } else {
+                displayPitMessage('Wi-Fi接続が終了しました');
+            }
         };
 
         socket.onerror = function(error) {
             console.error('❌ WebSocketエラー:', error);
+            displayPitMessage('WebSocketエラーが発生しました。再接続を試みます。', true);
             // エラー時は onclose が呼ばれて再接続処理が走るため、ここでは特別な処理は不要
         };
 
     } catch (e) {
-        console.error('WebSocketの初期化中にエラーが発生しました:', e);
+        console.error('WebSocketの初期化中に致命的なエラーが発生しました:', e);
         socket = null;
+        displayPitMessage('WebSocket初期化失敗 (ブラウザの問題の可能性)', true);
         updateWifiButtonDisplay();
     }
 }
@@ -807,17 +830,29 @@ function disconnectWebSocket() {
     if (socket) {
         console.log("WebSocketを切断中...");
         // oncloseの自動再接続を防ぐため、oncloseハンドラを一時的に無効化
-        socket.onclose = null; 
-        socket.close();
-        socket = null;
+        socket.onclose = function(event) {
+            console.log('✅ WebSocket明示的に切断されました');
+            // 明示的な切断の場合、リトライロジックをリセット
+            if (connectAttemptTimerId) {
+                clearTimeout(connectAttemptTimerId);
+                connectAttemptTimerId = null;
+            }
+            socket = null;
+            retryCount = 0;
+            updateWifiButtonDisplay();
+            displayPitMessage('Wi-Fi接続停止');
+        }; 
+        socket.close(1000, 'User disconnect'); // 正常終了コード 1000 を使用
+    } else {
+        // socketがnullまたは既に切断状態の場合
+        if (connectAttemptTimerId) {
+            clearTimeout(connectAttemptTimerId);
+            connectAttemptTimerId = null;
+        }
+        retryCount = 0;
+        updateWifiButtonDisplay();
+        displayPitMessage('Wi-Fi接続停止');
     }
-    if (connectAttemptTimerId) {
-        clearTimeout(connectAttemptTimerId);
-        connectAttemptTimerId = null;
-    }
-    retryCount = 0;
-    updateWifiButtonDisplay();
-    displayPitMessage('Wi-Fi接続停止');
 }
 
 
@@ -827,7 +862,7 @@ function setWsHost() {
     const newHost = prompt("Wi-Fi接続先ホスト/IPアドレスを入力してください (例: 192.168.4.1)", currentHost);
     
     if (newHost) {
-        localStorage.setItem(API_ENDPOINT_KEY, newHost);
+        localStorage.setItem(API_ENDPOINT_KEY, newHost.trim());
         return true;
     }
     return false;
@@ -836,11 +871,8 @@ function setWsHost() {
 const clickWifiButton = () => {
     console.log("Wi-Fi button clicked");
     
-    if (socket && socket.readyState === WebSocket.OPEN) {
-        // 接続中の場合は切断
-        disconnectWebSocket();
-    } else if (socket && socket.readyState === WebSocket.CONNECTING) {
-        // 接続試行中の場合は切断
+    if (socket && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) {
+        // 接続中/接続試行中の場合は切断
         disconnectWebSocket();
     } else {
         // 未接続/切断中の場合は接続
