@@ -181,7 +181,7 @@
         .wifi-disconnected { background-color: #ff4d4d !important; border-color: #993333;}
         .wifi-connected { background-color: #007aff !important; border-color: #0066cc;}
         .wifi-connecting { background-color: #ffcc00 !important; border-color: #cc9900;}
-        .wifi-error { background-color: #ff0000 !important; border-color: #cc0000;} /* エラー表示追加 */
+        .wifi-error { background-color: #ff0000 !important; border-color: #cc0000;} 
 
         /* debug-overlay */
         #debug-overlay {
@@ -282,12 +282,10 @@
 // ----------------------------------------------------
 // ★★★ WebSocket定数と変数 ★★★
 // ----------------------------------------------------
-const WS_PORT = '81'; // ESP32のWebSocketポート (デフォルト: 81)
-// サーバー側の設定によっては、Webサーバーと同じ80番ポートを使うこともあります。
-// 81番で接続できない場合、コードを修正して80番を試す必要があります。
-// 例: const WS_PORT = '80'; 
-
-const API_ENDPOINT_KEY = 'pitMessageApiUrl'; // 設定はURL形式で保存するが、実際はホスト名として使用
+// 変更点: ポートを81から標準の80に変更。ほとんどのESP32のWebサーバー/WebSocketは80で動作します。
+const WS_PORT = '80'; // ESP32のWebSocketポート (デフォルト: 80)
+const WS_PATH = '';   // 接続パス（通常は空、'/ws'が必要な場合は変更）
+const API_ENDPOINT_KEY = 'pitMessageApiHost'; // キー名をIP/ホスト名に合わせて変更
 
 let socket = null;
 let retryCount = 0;
@@ -553,10 +551,10 @@ const getSettings = () => {
         elem.getSettingsBtn.classList.add('no-setting');
     }
     
-    // --- WebSocket接続ホスト名の読み込み (API URLとして保存されているがホスト名/IPとして扱う) ---
-    const storedApiUrl = localStorage.getItem(API_ENDPOINT_KEY);
-    if (storedApiUrl) {
-        console.log(`Loaded WS Host/IP: ${storedApiUrl}`);
+    // --- WebSocket接続ホスト名の読み込み ---
+    const storedHost = localStorage.getItem(API_ENDPOINT_KEY);
+    if (storedHost) {
+        console.log(`Loaded WS Host/IP: ${storedHost}`);
     } else {
         console.log("WS Host/IP not set in localStorage.");
     }
@@ -696,7 +694,7 @@ function onGpsError(error) {
 }
 
 // ----------------------------------------------------
-// ★★★ WebSocket関連関数（デバッグ強化） ★★★
+// ★★★ WebSocket関連関数（デバッグ強化・ホスト入力強化） ★★★
 // ----------------------------------------------------
 
 // Wi-Fiボタンの表示を更新する関数
@@ -742,7 +740,22 @@ const displayPitMessage = (message, isError = false) => {
         }
         
         // デバッグ情報にもログ出力
-        if (elem.debugInfo) elem.debugInfo.innerHTML += `<br><span style="color: ${isError ? '#ff4d4d' : '#999999'};">[WS Log] ${trimmedMessage}</span>`;
+        if (elem.debugInfo) {
+            // エラーや接続情報は色を変えて表示
+            const color = isError || trimmedMessage.includes('エラー') || trimmedMessage.includes('失敗') ? '#ff4d4d' : '#999999';
+            const logEntry = `<br><span style="color: ${color};">[WS Log] ${trimmedMessage}</span>`;
+            
+            // 古いログを保持しすぎないように調整
+            let currentLogs = elem.debugInfo.innerHTML;
+            const logLines = currentLogs.split('<br>').filter(line => !line.startsWith('GPS設定:'));
+            
+            // ログが多い場合は古いものを削除
+            if (logLines.length > 5) {
+                logLines.splice(1, logLines.length - 5); 
+            }
+            
+            elem.debugInfo.innerHTML = elem.statusDisplay.outerHTML + '<p class="status-text">' + logLines.join('<br>') + '</p>' + logEntry;
+        }
     }
 }
 
@@ -762,7 +775,8 @@ function connectWebSocket() {
     }
 
     // storedHost (IPアドレスまたはホスト名) を使用してURLを作成
-    const wsUrl = `ws://${storedHost}:${WS_PORT}/`;
+    // WS_PORTが80の場合、ポート番号は省略可能ですが、明示的に含めておきます。
+    const wsUrl = `ws://${storedHost}:${WS_PORT}${WS_PATH}`;
     
     if (connectAttemptTimerId) {
         clearTimeout(connectAttemptTimerId);
@@ -770,14 +784,16 @@ function connectWebSocket() {
     }
     
     try {
-        socket = new WebSocket(wsUrl);
+        // 🚨 修正ポイント: ここで初期化失敗が起きる場合は、URL形式が問題の可能性が高い
+        socket = new WebSocket(wsUrl); 
+        
         updateWifiButtonDisplay();
-        displayPitMessage(`接続試行中: ${wsUrl}`, false);
+        displayPitMessage(`接続試行中: ${wsUrl}`);
         console.log(`WebSocket接続を試行中... ${wsUrl}`);
 
         socket.onopen = function() {
             console.log('✅ WebSocket接続確立');
-            retryCount = 0; // 成功でリトライカウントをリセット
+            retryCount = 0; 
             updateWifiButtonDisplay();
             displayPitMessage('WebSocket接続完了');
         };
@@ -789,14 +805,12 @@ function connectWebSocket() {
         };
 
         socket.onclose = function(event) {
-            // 正常終了 (コード 1000) でない場合、または明示的な切断でない場合は再接続を試行
             const shouldRetry = event.code !== 1000 && socket !== null;
             
             console.warn(`❌ WebSocket接続切断: コード ${event.code}, 理由: ${event.reason}`);
             updateWifiButtonDisplay();
             
             if (shouldRetry) {
-                // 接続試行タイマーが設定されている場合はクリア
                 if (connectAttemptTimerId) {
                     clearTimeout(connectAttemptTimerId);
                 }
@@ -813,14 +827,15 @@ function connectWebSocket() {
 
         socket.onerror = function(error) {
             console.error('❌ WebSocketエラー:', error);
-            displayPitMessage('WebSocketエラーが発生しました。再接続を試みます。', true);
-            // エラー時は onclose が呼ばれて再接続処理が走るため、ここでは特別な処理は不要
+            // エラーが発生すると onclose が呼ばれて再接続処理が走る
         };
 
     } catch (e) {
+        // 🚨 初期化時に例外が発生した場合（URLの形式エラーなど）
         console.error('WebSocketの初期化中に致命的なエラーが発生しました:', e);
         socket = null;
-        displayPitMessage('WebSocket初期化失敗 (ブラウザの問題の可能性)', true);
+        // 以前のエラーメッセージをより詳細なものに置き換える
+        displayPitMessage(`WebSocket初期化失敗: [${e.name}] URL形式を確認してください: ${wsUrl}`, true);
         updateWifiButtonDisplay();
     }
 }
@@ -829,10 +844,8 @@ function connectWebSocket() {
 function disconnectWebSocket() {
     if (socket) {
         console.log("WebSocketを切断中...");
-        // oncloseの自動再接続を防ぐため、oncloseハンドラを一時的に無効化
         socket.onclose = function(event) {
             console.log('✅ WebSocket明示的に切断されました');
-            // 明示的な切断の場合、リトライロジックをリセット
             if (connectAttemptTimerId) {
                 clearTimeout(connectAttemptTimerId);
                 connectAttemptTimerId = null;
@@ -842,9 +855,8 @@ function disconnectWebSocket() {
             updateWifiButtonDisplay();
             displayPitMessage('Wi-Fi接続停止');
         }; 
-        socket.close(1000, 'User disconnect'); // 正常終了コード 1000 を使用
+        socket.close(1000, 'User disconnect'); 
     } else {
-        // socketがnullまたは既に切断状態の場合
         if (connectAttemptTimerId) {
             clearTimeout(connectAttemptTimerId);
             connectAttemptTimerId = null;
@@ -855,14 +867,38 @@ function disconnectWebSocket() {
     }
 }
 
-
+// 🚨 修正ポイント: ホスト入力時の文字列をクリーニングする
 function setWsHost() {
-    // prompt()はユーザー操作が必要なため、簡易的なデモ用
-    const currentHost = localStorage.getItem(API_ENDPOINT_KEY) || window.location.hostname;
-    const newHost = prompt("Wi-Fi接続先ホスト/IPアドレスを入力してください (例: 192.168.4.1)", currentHost);
+    const currentHost = localStorage.getItem(API_ENDPOINT_KEY) || "192.168.4.1"; // デフォルト値を明示
+    
+    // 入力プロンプト
+    let newHost = prompt("Wi-Fi接続先ホスト/IPアドレスを入力してください (例: 192.168.4.1)", currentHost);
     
     if (newHost) {
-        localStorage.setItem(API_ENDPOINT_KEY, newHost.trim());
+        // 1. 前後の空白を削除
+        newHost = newHost.trim();
+        
+        // 2. http://, https://, ws://, wss:// などのプロトコルを除去
+        newHost = newHost.replace(/^(https?|wss?):\/\//i, '');
+        
+        // 3. ポート番号やパスがあればそれより手前で切断
+        // 例: 192.168.4.1:81/ws -> 192.168.4.1:81 を取得
+        let parts = newHost.split('/');
+        newHost = parts[0]; 
+
+        // 4. IPアドレスの形式チェック（簡易的）
+        if (!newHost.match(/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}(:\d+)?$/)) {
+             displayPitMessage("IPアドレスまたはホスト名の形式が無効です。", true);
+             return false;
+        }
+
+        // 5. ポート番号が含まれている場合は、それをWS_PORTとして利用可能
+        let [host, port] = newHost.split(':');
+        
+        // このアプリではポート番号を定数として扱っているため、ホスト名部分のみを保存
+        localStorage.setItem(API_ENDPOINT_KEY, host);
+
+        displayPitMessage(`ホスト設定完了: ${host} (ポート: ${WS_PORT})`);
         return true;
     }
     return false;
@@ -872,21 +908,17 @@ const clickWifiButton = () => {
     console.log("Wi-Fi button clicked");
     
     if (socket && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) {
-        // 接続中/接続試行中の場合は切断
         disconnectWebSocket();
     } else {
-        // 未接続/切断中の場合は接続
         const storedHost = localStorage.getItem(API_ENDPOINT_KEY);
         
         if (!storedHost) {
-            // ホストが未設定の場合、設定を促す
             if (setWsHost()) {
-                connectWebSocket(); // 設定成功したら接続開始
+                connectWebSocket(); 
             } else {
                 displayPitMessage('ホストの設定をキャンセルしました。');
             }
         } else {
-            // ホストが設定済みなら接続開始
             connectWebSocket(); 
         }
     }
