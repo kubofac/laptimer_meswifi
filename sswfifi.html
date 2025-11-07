@@ -282,16 +282,17 @@
 // ----------------------------------------------------
 // ★★★ WebSocket定数と変数 ★★★
 // ----------------------------------------------------
-// 変更点: ポートを81から標準の80に変更。ほとんどのESP32のWebサーバー/WebSocketは80で動作します。
-const WS_PORT = '80'; // ESP32のWebSocketポート (デフォルト: 80)
-const WS_PATH = '';   // 接続パス（通常は空、'/ws'が必要な場合は変更）
-const API_ENDPOINT_KEY = 'pitMessageApiHost'; // キー名をIP/ホスト名に合わせて変更
+// 修正点: セキュアなWebSocketプロトコル (WSS) と標準ポート (443) を試行
+const WS_PROTOCOL = 'wss'; // 'ws' -> 'wss'に変更
+const WS_PORT = '443';     // '80' -> '443'に変更
+const WS_PATH = '';        
+const API_ENDPOINT_KEY = 'pitMessageApiHost'; 
 
 let socket = null;
 let retryCount = 0;
 let connectAttemptTimerId = null;
 
-// --- グローバル変数 ---
+// --- グローバル変数 (ストップウォッチ関連、変更なし) ---
 const SW_STATE = { STOP: 0, RUN: 1, PAUSE: 2 };
 let swState = SW_STATE.STOP;
 let startTime = 0;
@@ -324,11 +325,10 @@ const elem = {
     pitMessageDisplay: null
 };
 
-// GPSラップ計測用変数 - localStorageから読み込む
 let LAP_LINE_P1 = { lat: 0, lon: 0 };
 let LAP_LINE_P2 = { lat: 0, lon: 0 };
 
-// --- ストップウォッチ関連の関数（変更なし） ---
+// --- ストップウォッチ関連の関数（省略） ---
 const totalTimePrint = (time) => {
     let h = Math.floor(time / 3600000);
     let m = Math.floor((time % 3600000) / 60000);
@@ -466,7 +466,6 @@ const clickLapSW = () => {
     console.log("lap/reset button clicked");
     
     if (swState === SW_STATE.RUN) {
-        // RUN中はLAP機能
         lapCount++;
         const now = Date.now();
         const lapDuration = now - lapStartTime;
@@ -476,7 +475,6 @@ const clickLapSW = () => {
         startRealtimeLap();
         
     } else if (swState === SW_STATE.PAUSE) {
-        // PAUSE中はRESET機能
         resetStopwatch();
     }
     updateButtonDisplay();
@@ -559,22 +557,18 @@ const getSettings = () => {
         console.log("WS Host/IP not set in localStorage.");
     }
     
-    // Wi-Fiボタンの初期状態設定
     updateWifiButtonDisplay();
 };
-
-// ... onGpsPositionUpdate, onGpsError (GPS関連関数は変更なし) ...
 
 function onGpsPositionUpdate(position) {
     if (swState !== SW_STATE.RUN || !isGpsRunning) {
         return;
     }
-    
+    // ... GPSロジック（変更なし）
     const currentLat = position.coords.latitude;
     const currentLon = position.coords.longitude;
     const currentTime = Date.now();
     
-    // ヘルパー関数群（省略）
     const calculateDistance = (lat1, lon1, lat2, lon2) => {
         const R = 6371e3;
         const φ1 = lat1 * Math.PI / 180;
@@ -694,10 +688,9 @@ function onGpsError(error) {
 }
 
 // ----------------------------------------------------
-// ★★★ WebSocket関連関数（デバッグ強化・ホスト入力強化） ★★★
+// ★★★ WebSocket関連関数（プロトコル/ポート修正） ★★★
 // ----------------------------------------------------
 
-// Wi-Fiボタンの表示を更新する関数
 const updateWifiButtonDisplay = () => {
     if (!elem.wifiButton) return;
 
@@ -708,7 +701,7 @@ const updateWifiButtonDisplay = () => {
     } else if (socket && socket.readyState === WebSocket.CONNECTING) {
         elem.wifiButton.classList.remove('wifi-disconnected', 'wifi-connected', 'wifi-error');
         elem.wifiButton.classList.add('wifi-connecting');
-        elem.wifiButton.textContent = 'Wi-Fi (接続試行中)';
+        elem.wifiButton.textContent = `Wi-Fi (${WS_PROTOCOL}試行中)`; // プロトコルを表示
     } else if (socket && socket.readyState === WebSocket.CLOSED) {
         elem.wifiButton.classList.remove('wifi-connected', 'wifi-connecting');
         elem.wifiButton.classList.add('wifi-disconnected', 'wifi-error');
@@ -717,11 +710,10 @@ const updateWifiButtonDisplay = () => {
         const storedHost = localStorage.getItem(API_ENDPOINT_KEY);
         elem.wifiButton.classList.remove('wifi-connected', 'wifi-connecting', 'wifi-error');
         elem.wifiButton.classList.add('wifi-disconnected');
-        elem.wifiButton.textContent = storedHost ? 'Wi-Fi (切断)' : 'Wi-Fi (未設定)';
+        elem.wifiButton.textContent = storedHost ? `Wi-Fi (切断)` : 'Wi-Fi (未設定)';
     }
 }
 
-// ピットメッセージの表示を制御する関数
 const displayPitMessage = (message, isError = false) => {
     if (elem.pitMessageDisplay) {
         const trimmedMessage = message ? message.trim() : '';
@@ -739,27 +731,24 @@ const displayPitMessage = (message, isError = false) => {
             }
         }
         
-        // デバッグ情報にもログ出力
         if (elem.debugInfo) {
-            // エラーや接続情報は色を変えて表示
             const color = isError || trimmedMessage.includes('エラー') || trimmedMessage.includes('失敗') ? '#ff4d4d' : '#999999';
             const logEntry = `<br><span style="color: ${color};">[WS Log] ${trimmedMessage}</span>`;
             
-            // 古いログを保持しすぎないように調整
             let currentLogs = elem.debugInfo.innerHTML;
             const logLines = currentLogs.split('<br>').filter(line => !line.startsWith('GPS設定:'));
             
-            // ログが多い場合は古いものを削除
             if (logLines.length > 5) {
                 logLines.splice(1, logLines.length - 5); 
             }
             
-            elem.debugInfo.innerHTML = elem.statusDisplay.outerHTML + '<p class="status-text">' + logLines.join('<br>') + '</p>' + logEntry;
+            // ログの先頭にGPSステータスを保持
+            const statusHtml = elem.statusDisplay ? elem.statusDisplay.outerHTML : '';
+            elem.debugInfo.innerHTML = statusHtml + '<p class="status-text">' + logLines.join('<br>') + '</p>' + logEntry;
         }
     }
 }
 
-// WebSocketへの接続を試行する関数
 function connectWebSocket() {
     if (socket && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) {
         console.log('WebSocketは既に接続中または接続試行中です。');
@@ -768,15 +757,13 @@ function connectWebSocket() {
     
     const storedHost = localStorage.getItem(API_ENDPOINT_KEY);
     if (!storedHost) {
-        console.log("WebSocket接続先ホスト/IPが未設定です。");
         displayPitMessage('Wi-Fiホストが未設定です', true);
         updateWifiButtonDisplay();
         return;
     }
 
-    // storedHost (IPアドレスまたはホスト名) を使用してURLを作成
-    // WS_PORTが80の場合、ポート番号は省略可能ですが、明示的に含めておきます。
-    const wsUrl = `ws://${storedHost}:${WS_PORT}${WS_PATH}`;
+    // 🚨 修正後のURL形式: wss://192.168.4.1:443/
+    const wsUrl = `${WS_PROTOCOL}://${storedHost}:${WS_PORT}${WS_PATH}`;
     
     if (connectAttemptTimerId) {
         clearTimeout(connectAttemptTimerId);
@@ -784,7 +771,6 @@ function connectWebSocket() {
     }
     
     try {
-        // 🚨 修正ポイント: ここで初期化失敗が起きる場合は、URL形式が問題の可能性が高い
         socket = new WebSocket(wsUrl); 
         
         updateWifiButtonDisplay();
@@ -799,7 +785,6 @@ function connectWebSocket() {
         };
 
         socket.onmessage = function(event) {
-            // 受信データはピットメッセージのプレーンテキストを想定
             const message = event.data;
             displayPitMessage(message);
         };
@@ -827,20 +812,18 @@ function connectWebSocket() {
 
         socket.onerror = function(error) {
             console.error('❌ WebSocketエラー:', error);
-            // エラーが発生すると onclose が呼ばれて再接続処理が走る
+            // 接続試行中の場合は、oncloseが呼ばれて再試行が走る
         };
 
     } catch (e) {
-        // 🚨 初期化時に例外が発生した場合（URLの形式エラーなど）
         console.error('WebSocketの初期化中に致命的なエラーが発生しました:', e);
         socket = null;
-        // 以前のエラーメッセージをより詳細なものに置き換える
+        // ユーザーが以前に見たエラーメッセージに対応
         displayPitMessage(`WebSocket初期化失敗: [${e.name}] URL形式を確認してください: ${wsUrl}`, true);
         updateWifiButtonDisplay();
     }
 }
 
-// WebSocket接続を明示的に閉じる関数
 function disconnectWebSocket() {
     if (socket) {
         console.log("WebSocketを切断中...");
@@ -867,38 +850,31 @@ function disconnectWebSocket() {
     }
 }
 
-// 🚨 修正ポイント: ホスト入力時の文字列をクリーニングする
 function setWsHost() {
-    const currentHost = localStorage.getItem(API_ENDPOINT_KEY) || "192.168.4.1"; // デフォルト値を明示
+    // 既存のホスト設定があればそれをデフォルトにする
+    const currentHost = localStorage.getItem(API_ENDPOINT_KEY) || "192.168.4.1"; 
     
-    // 入力プロンプト
-    let newHost = prompt("Wi-Fi接続先ホスト/IPアドレスを入力してください (例: 192.168.4.1)", currentHost);
+    // プロトコルとポート情報をプロンプトに追加して、現在の設定を表示
+    const promptMessage = `Wi-Fi接続先ホスト/IPアドレスを入力してください (例: 192.168.4.1)\n\n現在のプロトコル: ${WS_PROTOCOL}\n現在のポート: ${WS_PORT}`;
+
+    let newHost = prompt(promptMessage, currentHost);
     
     if (newHost) {
-        // 1. 前後の空白を削除
-        newHost = newHost.trim();
-        
-        // 2. http://, https://, ws://, wss:// などのプロトコルを除去
-        newHost = newHost.replace(/^(https?|wss?):\/\//i, '');
-        
-        // 3. ポート番号やパスがあればそれより手前で切断
-        // 例: 192.168.4.1:81/ws -> 192.168.4.1:81 を取得
+        newHost = newHost.trim().replace(/^(https?|wss?):\/\//i, '');
         let parts = newHost.split('/');
         newHost = parts[0]; 
 
-        // 4. IPアドレスの形式チェック（簡易的）
         if (!newHost.match(/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}(:\d+)?$/)) {
              displayPitMessage("IPアドレスまたはホスト名の形式が無効です。", true);
              return false;
         }
 
-        // 5. ポート番号が含まれている場合は、それをWS_PORTとして利用可能
-        let [host, port] = newHost.split(':');
+        // ポート番号はWS_PORT定数で管理するため、ホスト名部分のみを保存
+        let hostOnly = newHost.split(':')[0];
         
-        // このアプリではポート番号を定数として扱っているため、ホスト名部分のみを保存
-        localStorage.setItem(API_ENDPOINT_KEY, host);
+        localStorage.setItem(API_ENDPOINT_KEY, hostOnly);
 
-        displayPitMessage(`ホスト設定完了: ${host} (ポート: ${WS_PORT})`);
+        displayPitMessage(`ホスト設定完了: ${hostOnly} (プロトコル: ${WS_PROTOCOL}, ポート: ${WS_PORT})`);
         return true;
     }
     return false;
@@ -929,7 +905,6 @@ const clickWifiButton = () => {
 // ----------------------------------------------------
 
 window.addEventListener('load', () => {
-    // Service Workerの登録（PWAとして動作させる場合）
     if ('serviceWorker' in navigator) {
         navigator.serviceWorker.register('/service-worker.js')
             .then(registration => {
@@ -963,7 +938,11 @@ window.addEventListener('load', () => {
     updateButtonDisplay();
     totalTimePrint(0);
     if (elem.display1) elem.display1.textContent = '00:00.000';
-    getSettings(); // GPS設定とホスト/IPアドレスの読み込み
+    getSettings(); 
+    
+    // デバッグ情報パネルを表示
+    const debugOverlay = document.getElementById('debug-overlay');
+    if (debugOverlay) debugOverlay.style.display = 'block'; 
 });
 </script>
 </body>
