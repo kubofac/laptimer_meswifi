@@ -282,9 +282,10 @@
 // ----------------------------------------------------
 // ★★★ WebSocket定数と変数 ★★★
 // ----------------------------------------------------
-// 修正点: セキュアなWebSocketプロトコル (WSS) と標準ポート (443) を試行
-const WS_PROTOCOL = 'wss'; // 'ws' -> 'wss'に変更
-const WS_PORT = '443';     // '80' -> '443'に変更
+// 以前のエラーメッセージの原因となった非セキュアなプロトコルに戻します。
+// ブラウザのセキュリティ設定を回避する必要がある可能性が高いです。
+const WS_PROTOCOL = 'ws'; // 'wss' -> 'ws'に戻す
+const WS_PORT = '80';     // '443' -> '80'に戻す
 const WS_PATH = '';        
 const API_ENDPOINT_KEY = 'pitMessageApiHost'; 
 
@@ -762,7 +763,7 @@ function connectWebSocket() {
         return;
     }
 
-    // 🚨 修正後のURL形式: wss://192.168.4.1:443/
+    // 🚨 修正後のURL形式: ws://192.168.4.1:80/
     const wsUrl = `${WS_PROTOCOL}://${storedHost}:${WS_PORT}${WS_PATH}`;
     
     if (connectAttemptTimerId) {
@@ -818,8 +819,12 @@ function connectWebSocket() {
     } catch (e) {
         console.error('WebSocketの初期化中に致命的なエラーが発生しました:', e);
         socket = null;
-        // ユーザーが以前に見たエラーメッセージに対応
-        displayPitMessage(`WebSocket初期化失敗: [${e.name}] URL形式を確認してください: ${wsUrl}`, true);
+        // セキュリティエラーが再発した場合、その原因をより詳しくユーザーに伝えます
+        let errorMessage = `WebSocket初期化失敗: [${e.name}] URL形式を確認してください: ${wsUrl}`;
+        if (e.name === "SecurityError") {
+            errorMessage += `<br>🚨警告: このエラーは、https接続から非セキュアなws://への接続をブラウザがブロックしているため発生します。回避策については、技術サポートにご相談ください。`;
+        }
+        displayPitMessage(errorMessage, true);
         updateWifiButtonDisplay();
     }
 }
@@ -855,7 +860,7 @@ function setWsHost() {
     const currentHost = localStorage.getItem(API_ENDPOINT_KEY) || "192.168.4.1"; 
     
     // プロトコルとポート情報をプロンプトに追加して、現在の設定を表示
-    const promptMessage = `Wi-Fi接続先ホスト/IPアドレスを入力してください (例: 192.168.4.1)\n\n現在のプロトコル: ${WS_PROTOCOL}\n現在のポート: ${WS_PORT}`;
+    const promptMessage = `Wi-Fi接続先ホスト/IPアドレスを入力してください (例: 192.168.4.1)\n\n現在のプロトコル: ${WS_PROTOCOL}\n現在のポート: ${WS_PORT}\n\n⚠️注意: ws://への接続はブラウザにブロックされる可能性があります。`;
 
     let newHost = prompt(promptMessage, currentHost);
     
