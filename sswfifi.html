@@ -2,10 +2,10 @@
 <html lang="ja">
 <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, user-scalable=no">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>KLAP_receiver_WiFi</title>
     <link rel="manifest" href="/manifest.json">
-    <!-- Tailwind CSSの代わりに、元のコードのCSSを使用 -->
+    <!-- Tailwind CSSは使用せず、元のコードのCSSとカスタムCSSを追加 -->
     <style>
         html, body {
             height: 100%;
@@ -17,7 +17,7 @@
             display: flex;
             flex-direction: column;
             align-items: center;
-            justify-content: flex-start; 
+            justify-content: flex-start;
             min-height: 100vh;
             background-color: #000000;
             color: #ffffff;
@@ -32,102 +32,102 @@
             background: #000000;
             border-radius: 10px;
             box-shadow: 0 4px 8px rgba(0,0,0,0.3);
-            padding-top: 20px; 
-            padding-bottom: 5px; 
+            padding-top: 20px;
+            padding-bottom: 5px;
             padding-left: 20px;
             padding-right: 20px;
             max-width: 100%;
-            margin: 0 auto; 
+            margin: 0 auto;
             width: 100%;
             box-sizing: border-box;
-            height: calc(100vh - 20px); 
+            height: calc(100vh - 20px);
             position: relative;
         }
         
         /* 2カラム構造 */
         #main-content {
             display: flex;
-            flex-direction: row; 
+            flex-direction: row;
             width: 100%;
             gap: 15px;
-            align-items: flex-start; 
-            flex-grow: 1; 
-            min-height: 0; 
-            margin-bottom: 50px; 
+            align-items: flex-start;
+            flex-grow: 1;
+            min-height: 0;
+            margin-bottom: 50px;
             
             position: relative;
-            z-index: 10; 
+            z-index: 10;
         }
         
         /* 左カラム（リアルラップ、経過時間、メッセージ） - 幅65% */
         #left-column {
             display: flex;
             flex-direction: column;
-            flex-basis: 65%; 
+            flex-basis: 65%;
             max-width: 65%;
-            flex-shrink: 0; 
+            flex-shrink: 0;
             align-items: center;
-            gap: 0px; 
+            gap: 0px;
         }
 
         /* 右カラム（ラップ履歴） - 幅35% */
         #right-column {
             display: flex;
             flex-direction: column;
-            flex-basis: 35%; 
+            flex-basis: 35%;
             max-width: 35%;
-            flex-grow: 1; 
+            flex-grow: 1;
             align-items: center;
-            height: 100%; 
+            height: 100%;
         }
 
         #time-display-column {
-            width: 100%; 
+            width: 100%;
         }
         
         /* 計測ラップ (display1) */
         #display1 {
-            font-size: 100px; 
+            font-size: 100px;
             font-weight: bold;
             color: #eeeeee;
-            margin-bottom: 0px; 
-            white-space: nowrap; 
-            overflow: hidden; 
-            text-overflow: clip; 
+            margin-bottom: 0px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: clip;
         }
 
         /* 経過時間 (display) */
         #display {
-            font-size: 70px; 
+            font-size: 70px;
             font-weight: bold;
             color: #cccccc;
-            margin-bottom: 0px; 
+            margin-bottom: 0px;
             white-space: nowrap;
-            overflow: hidden; 
+            overflow: hidden;
             text-overflow: clip;
         }
 
         /* ピットメッセージ */
         #pitMessageDisplay {
             width: 100%;
-            margin: 0; 
-            font-size: 3.5em; 
-            padding: 10px; 
-            font-weight: bold; 
-            color: #ffeb3b; 
-            background: #000000; 
-            border: none; 
-            border-radius: 5px; 
+            margin: 0;
+            font-size: 3.5em;
+            padding: 10px;
+            font-weight: bold;
+            color: #ffeb3b;
+            background: #000000;
+            border: none;
+            border-radius: 5px;
             min-height: 25px;
-            text-align: left; 
-            display: none; 
+            text-align: left;
+            display: none;
         }
 
         /* ラップリストの調整 */
         #lap_list {
             width: 100%;
-            height: 100%; 
-            max-height: none; 
+            height: 100%;
+            max-height: none;
             overflow-y: auto;
             border: none;
             border-radius: 5px;
@@ -137,11 +137,11 @@
 
         /* ラップ履歴の文字を2.0emに拡大 */
         #lap_list div {
-            font-size: 2.0em; 
+            font-size: 2.0em;
             margin-bottom: 3px;
             color: #dddddd;
-            text-align: right; 
-            white-space: nowrap; 
+            text-align: right;
+            white-space: nowrap;
         }
 
         #buttons-row {
@@ -150,8 +150,8 @@
             width: 100%;
             gap: 15px;
             padding-top: 10px;
-            margin-bottom: 0; 
-            flex-shrink: 0; 
+            margin-bottom: 0;
+            flex-shrink: 0;
         }
         
         .button {
@@ -165,9 +165,9 @@
             cursor: pointer;
             transition: background-color 0.2s ease;
             text-align: center;
-            flex-grow: 1; 
+            flex-grow: 1;
             flex-basis: 0;
-            background-color: #2c2c2e; 
+            background-color: #2c2c2e;
         }
         
         .button:hover { background-color: #4a4a4e; }
@@ -181,17 +181,18 @@
         /* Wi-Fiポーリングの状態を示すクラス */
         .wifi-disconnected { background-color: #ff4d4d !important; border-color: #993333;}
         .wifi-connected { background-color: #007aff !important; border-color: #0066cc;}
+        .wifi-polling { background-color: #ffc107 !important; border-color: #ff9800;} /* 監視中を示す色 */
 
         /* debug-overlay */
         #debug-overlay {
-            position: absolute; 
+            position: absolute;
             top: 0;
             left: 0;
             width: 100%;
-            background-color: rgba(0, 0, 0, 0.7); 
+            background-color: rgba(0, 0, 0, 0.7);
             color: #999999;
             padding: 5px 10px;
-            border-radius: 10px 10px 0 0; 
+            border-radius: 10px 10px 0 0;
             font-size: 14px;
             line-height: 1.5;
             box-sizing: border-box;
@@ -199,29 +200,90 @@
             display: none;}
         .status-text { text-align: left; margin: 0; }
         
+        /* モーダルCSS */
+        #api-modal {
+            position: fixed;
+            z-index: 100;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            overflow: auto;
+            background-color: rgba(0,0,0,0.8);
+            display: none;
+            justify-content: center;
+            align-items: center;
+        }
+        .modal-content {
+            background-color: #1a1a1a;
+            padding: 20px;
+            border: 1px solid #444;
+            width: 90%;
+            max-width: 400px;
+            border-radius: 10px;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.5);
+        }
+        .modal-content h2 {
+            color: #ffffff;
+            font-size: 20px;
+            margin-bottom: 15px;
+        }
+        .modal-content input[type="text"] {
+            width: 100%;
+            padding: 10px;
+            margin: 8px 0 20px 0;
+            display: inline-block;
+            border: 1px solid #555;
+            border-radius: 4px;
+            box-sizing: border-box;
+            background-color: #333;
+            color: #fff;
+        }
+        .modal-buttons {
+            display: flex;
+            justify-content: flex-end;
+            gap: 10px;
+        }
+        .modal-buttons button {
+            cursor: pointer;
+            padding: 8px 15px;
+            border-radius: 5px;
+            font-weight: bold;
+        }
+        #modal-save {
+            background-color: #007aff;
+            color: white;
+            border: none;
+        }
+        #modal-cancel {
+            background-color: #4a4a4e;
+            color: white;
+            border: none;
+        }
+        
         /* モバイルビューでのフォントサイズ再調整 */
         @media (max-width: 768px) {
             #main-content {
                 flex-direction: column;
                 align-items: center;
                 gap: 10px;
-                flex-grow: 0; 
-                margin-bottom: 25px; 
+                flex-grow: 0;
+                margin-bottom: 25px;
             }
             #left-column, #right-column {
                 flex-basis: 100%;
                 max-width: 100%;
                 width: 100%;
-                height: auto; 
-                flex-shrink: 1; 
+                height: auto;
+                flex-shrink: 1;
             }
             #left-column {
-                gap: 0px; 
+                gap: 0px;
             }
-            #display1 { font-size: 80px; } 
+            #display1 { font-size: 80px; }
             #display { font-size: 45px; }
             #lap_list {
-                height: 30vh; 
+                height: 30vh;
                 min-height: 180px;
                 font-size: 1em;
             }
@@ -231,8 +293,8 @@
                 text-align: right;
             }
             #pitMessageDisplay {
-                font-size: 1.6em; 
-                padding: 8px; 
+                font-size: 1.6em;
+                padding: 8px;
             }
             .button {
                 font-size: 12px;
@@ -268,12 +330,25 @@
     
     <div id="buttons-row">
         <button id="start" class="button">start</button>
-        <button id="lap" class="button">LAP</button> 
+        <button id="lap" class="button">LAP</button>
         <button id="gpsButton" class="button no-gps">GPS</button>
         <button id="getSettingsBtn" class="button no-setting">GET</button>
-        <button id="wifiButton" class="button wifi-disconnected">Wi-Fi</button> <!-- BLEから変更 -->
+        <button id="wifiButton" class="button wifi-disconnected">Wi-Fi</button>
     </div>
 
+</div>
+
+<!-- カスタムモーダル (Promptの代替) -->
+<div id="api-modal">
+    <div class="modal-content">
+        <h2>PITメッセージ API URL設定</h2>
+        <label for="apiUrlInput" style="color:#ccc;">API URLを入力してください:</label>
+        <input type="text" id="apiUrlInput" placeholder="例: http://192.168.4.1/message">
+        <div class="modal-buttons">
+            <button id="modal-cancel">キャンセル</button>
+            <button id="modal-save">保存</button>
+        </div>
+    </div>
 </div>
 
 <script>
@@ -281,9 +356,9 @@
 // ----------------------------------------------------
 // ★★★ Wi-Fi/Polling定数と変数 ★★★
 // ----------------------------------------------------
-const POLL_INTERVAL = 3000; // 3秒間隔でメッセージを取得
+const POLL_INTERVAL = 5000; // 5秒間隔でメッセージを取得 (ネットワーク負荷軽減のため5秒に変更)
 const API_ENDPOINT_KEY = 'pitMessageApiUrl';
-// デフォルトのAPIエンドポイントURLを設定 (ユーザーの要求に応じて追加)
+// デフォルトのAPIエンドポイントURLを設定
 const DEFAULT_API_URL = 'http://192.168.4.1/message'; 
 
 let pollingTimerId = null;
@@ -309,6 +384,7 @@ let gpsThresholdValue = 20;
 let lapCoolDown = 15000;
 let isSettingsLoaded = false;
 let lapFixedDisplayTimeoutId = null;
+let fetchRetryCount = 0; // fetchリトライ回数を管理
 
 const elem = {
     display: null,
@@ -320,8 +396,12 @@ const elem = {
     lapButton: null,
     gpsButton: null,
     getSettingsBtn: null,
-    wifiButton: null, // BLEから変更
-    pitMessageDisplay: null
+    wifiButton: null, 
+    pitMessageDisplay: null,
+    apiModal: null, // モーダル要素
+    apiUrlInput: null, // モーダル入力フィールド
+    modalSave: null, // モーダル保存ボタン
+    modalCancel: null // モーダルキャンセルボタン
 };
 
 // GPSラップ計測用変数 - localStorageから読み込む
@@ -376,16 +456,16 @@ const startRealtimeLap = () => {
     }
 };
 
-const lapTimePrint = (time) => { 
+const lapTimePrint = (time) => {
     const lapDuration = lapTimeToString(time);
     const lapDiv = document.createElement('div');
-    lapDiv.textContent = `[${lapCount}] ${lapDuration}`; 
-    lapDiv.style.fontSize = '2.0em'; 
-    lapDiv.style.textAlign = 'right'; 
+    lapDiv.textContent = `[${lapCount}] ${lapDuration}`;
+    lapDiv.style.fontSize = '2.0em';
+    lapDiv.style.textAlign = 'right';
     if (elem.lap_list) {
         elem.lap_list.insertBefore(lapDiv, elem.lap_list.firstChild);
     }
-    lapRecords.push({ count: lapCount, time: lapDuration }); 
+    lapRecords.push({ count: lapCount, time: lapDuration });
 };
 
 const updateButtonDisplay = () => {
@@ -394,8 +474,8 @@ const updateButtonDisplay = () => {
             elem.lapButton.textContent = 'LAP';
         } else if (swState === SW_STATE.PAUSE) {
             elem.lapButton.textContent = 'RESET';
-        } else { 
-            elem.lapButton.textContent = 'LAP'; 
+        } else {
+            elem.lapButton.textContent = 'LAP';
         }
     }
     if (elem.startButton) {
@@ -404,7 +484,7 @@ const updateButtonDisplay = () => {
 };
 
 const clickStartSW = () => {
-    console.log("start/stop button clicked"); 
+    console.log("start/stop button clicked");
     
     if (!isSettingsLoaded && swState === SW_STATE.STOP) {
         if (elem.debugInfo) {
@@ -430,8 +510,9 @@ const clickStartSW = () => {
     } else if (swState === SW_STATE.PAUSE) {
         swState = SW_STATE.RUN;
         const now = Date.now();
-        const pausedTime = now - lapStartTime;
-        startTime += pausedTime;
+        // PAUSEした時間は計測から除く
+        const pausedTime = now - lapStartTime; 
+        startTime -= pausedTime;
         lapStartTime = now;
         countUp();
         startRealtimeLap();
@@ -470,7 +551,7 @@ const clickLapSW = () => {
         lapCount++;
         const now = Date.now();
         const lapDuration = now - lapStartTime;
-        lapTimePrint(lapDuration); 
+        lapTimePrint(lapDuration);
         lapStartTime = now;
         cancelAnimationFrame(lapTimerId);
         startRealtimeLap();
@@ -565,12 +646,11 @@ const getSettings = () => {
     if (elem.wifiButton) {
         if (pitMessageApiUrl) {
             elem.wifiButton.textContent = 'Wi-Fi (準備OK)';
-            elem.wifiButton.classList.remove('wifi-disconnected');
-            elem.wifiButton.classList.remove('wifi-connected');
+            elem.wifiButton.classList.remove('wifi-disconnected', 'wifi-connected');
         } else {
             elem.wifiButton.textContent = 'Wi-Fi (未設定)';
-            elem.wifiButton.classList.remove('wifi-connected');
             elem.wifiButton.classList.add('wifi-disconnected');
+            elem.wifiButton.classList.remove('wifi-connected');
         }
     }
 };
@@ -608,10 +688,12 @@ function onGpsPositionUpdate(position) {
     };
     
     const getSideOfLine = (pointLat, pointLon, lineLat1, lineLon1, lineLat2, lineLon2) => {
+        // クロス積のz成分の符号を返す (ラインL1->L2に対する点の左右)
         return (lineLon2 - lineLon1) * (pointLat - lineLat1) - (lineLat2 - lineLat1) * (pointLon - lineLon1);
     };
 
     const getIntersectionTime = (p1, p2, l1, l2, l3, l4) => {
+        // 2つの線分(P1->P2)と(L1->L2)の交差を検出し、交差時間を推定する (簡略化された交差計算)
         const A = (l4 - l2) * (p2.lon - p1.lon) - (l3 - l1) * (p2.lat - p1.lat);
         if (A === 0) return null;
         const B = (l3 - l1) * (p1.lat - l2) - (l4 - l2) * (p1.lon - l1);
@@ -637,8 +719,8 @@ function onGpsPositionUpdate(position) {
 
     if (isCrossingLine && isCoolDownOver && isNearStartLine) {
         const timeDelta = currentTime - lastPosition.time;
-        const speed = position.coords.speed || 0; 
-        const distanceMoved = speed * timeDelta / 1000; 
+        const speed = position.coords.speed || 0;
+        const distanceMoved = speed * timeDelta / 1000;
         
         const deltaLat = currentLat - lastPosition.lat;
         const deltaLon = currentLon - lastPosition.lon;
@@ -671,7 +753,7 @@ function onGpsPositionUpdate(position) {
 
         lapCount++;
         const lapDuration = lapTimeBase - lapStartTime;
-        lapTimePrint(lapDuration); 
+        lapTimePrint(lapDuration);
         
         cancelAnimationFrame(lapTimerId);
         if (elem.display1) elem.display1.textContent = lapTimeToString(lapDuration);
@@ -708,68 +790,101 @@ function onGpsError(error) {
 // ----------------------------------------------------
 
 // ピットメッセージの表示を制御する関数
-const displayPitMessage = (message) => {
+const displayPitMessage = (message, isError = false) => {
     if (elem.pitMessageDisplay) {
         const trimmedMessage = message ? message.trim() : '';
         
-        if (trimmedMessage === '' || trimmedMessage.toLowerCase() === 'なし') {
+        if (trimmedMessage === '' || trimmedMessage.toLowerCase() === 'なし' || trimmedMessage.toLowerCase().includes('ok')) {
             elem.pitMessageDisplay.textContent = '';
             elem.pitMessageDisplay.style.display = 'none';
-            if (elem.debugInfo) elem.debugInfo.innerHTML += `<br><span style="color: #666666;">[PIT] メッセージクリア</span>`;
         } else {
             elem.pitMessageDisplay.textContent = trimmedMessage;
             elem.pitMessageDisplay.style.display = 'block';
-            if (elem.debugInfo) elem.debugInfo.innerHTML += `<br><span style="color: #ffeb3b;">[PIT] ${trimmedMessage}</span>`;
+            elem.pitMessageDisplay.style.color = isError ? '#ff4d4d' : '#ffeb3b';
+            
+            if (elem.debugInfo) {
+                elem.debugInfo.innerHTML = `<span style="color: ${isError ? '#ff4d4d' : '#ffeb3b'};">[PIT] ${trimmedMessage}</span><br>` + elem.debugInfo.innerHTML;
+                // デバッグログが長くなりすぎないように制御
+                const maxLines = 5;
+                const lines = elem.debugInfo.innerHTML.split('<br>');
+                if (lines.length > maxLines) {
+                    elem.debugInfo.innerHTML = lines.slice(0, maxLines).join('<br>');
+                }
+            }
         }
     }
 }
 
-// APIからメッセージを取得するポーリング処理
-async function fetchMessage() {
+// APIからメッセージを取得するポーリング処理 (リトライ機能付き)
+async function fetchMessage(attempt = 1) {
+    const MAX_RETRIES = 3;
+    const isInitialCall = attempt === 1;
+
     if (!pitMessageApiUrl) {
-        displayPitMessage('URLが設定されていません。');
-        stopPolling();
+        if (isInitialCall) stopPolling();
+        displayPitMessage('URLが設定されていません。', true);
         return;
     }
 
     try {
-        // キャッシュを防ぐため、cache: 'no-store'を使用
-        const response = await fetch(pitMessageApiUrl, { cache: 'no-store' });
-
-        if (!response.ok) {
-            throw new Error(`HTTP Error! Status: ${response.status}`);
+        // リトライ中のUI表示
+        if (!isInitialCall) {
+            elem.wifiButton.textContent = `Wi-Fi (再試行 ${attempt}/${MAX_RETRIES})`;
         }
 
-        // 応答はプレーンテキストを想定
-        const message = (await response.text()).trim(); 
+        // キャッシュを防ぐため、cache: 'no-store'を使用
+        const response = await fetch(pitMessageApiUrl, { cache: 'no-store', signal: AbortSignal.timeout(5000) }); // 5秒のタイムアウト
+
+        if (!response.ok) {
+            // HTTPステータスが200番台以外の場合
+            throw new Error(`HTTP ${response.status} (${response.statusText || 'Unknown Error'})`);
+        }
+
+        const message = (await response.text()).trim();
         displayPitMessage(message);
         
         // Polling成功時のUI更新
         if (elem.wifiButton) {
-            elem.wifiButton.classList.remove('wifi-disconnected');
+            elem.wifiButton.classList.remove('wifi-disconnected', 'wifi-polling');
             elem.wifiButton.classList.add('wifi-connected');
             elem.wifiButton.textContent = 'Wi-Fi (OK)';
         }
+        fetchRetryCount = 0; // 成功したのでリトライ回数をリセット
 
     } catch (error) {
-        console.error('Error fetching pit message:', error);
+        console.error(`Error fetching pit message (Attempt ${attempt}):`, error.message);
         
-        // Polling失敗時のUI更新
+        // 一時的なネットワークエラーやタイムアウトの場合にリトライ
+        if (attempt < MAX_RETRIES && (error.name === 'AbortError' || error.name === 'TypeError' || error.message.includes('Failed to fetch'))) {
+            const delay = Math.pow(2, attempt) * 1000; // 2秒, 4秒, 8秒...
+            console.log(`Retrying in ${delay / 1000}s...`);
+            
+            // 次のポーリング間隔とは別に、即座にリトライをスケジュール
+            await new Promise(resolve => setTimeout(resolve, delay));
+            return fetchMessage(attempt + 1);
+        }
+
+        // 最終的な失敗時のUI更新
         if (elem.wifiButton) {
-            elem.wifiButton.classList.remove('wifi-connected');
+            elem.wifiButton.classList.remove('wifi-connected', 'wifi-polling');
             elem.wifiButton.classList.add('wifi-disconnected');
             elem.wifiButton.textContent = 'Wi-Fi (ERR)';
         }
-        // 通信エラーを一時的に表示
-        displayPitMessage(`通信エラー: ${error.message}`);
+        
+        let errorMessage = `通信失敗: ${error.message}`;
+        if (error.message.includes('Failed to fetch') || error.message.includes('NetworkError')) {
+             errorMessage = '通信失敗: サーバー/CORSエラーの可能性';
+        }
+
+        displayPitMessage(errorMessage, true);
     }
 }
 
 function startPolling() {
     if (isPolling) return;
     
-    if (!pitMessageApiUrl) {
-        displayPitMessage('API URLが設定されていません。');
+    if (!pitMessageApiUrl || !pitMessageApiUrl.startsWith('http')) {
+        displayPitMessage('API URLが設定されていません。', true);
         return;
     }
     
@@ -779,7 +894,8 @@ function startPolling() {
     
     if (elem.wifiButton) {
         elem.wifiButton.textContent = 'Wi-Fi (監視中)';
-        elem.wifiButton.classList.remove('wifi-disconnected');
+        elem.wifiButton.classList.remove('wifi-disconnected', 'wifi-connected');
+        elem.wifiButton.classList.add('wifi-polling');
     }
     console.log(`Polling started for URL: ${pitMessageApiUrl} at interval: ${POLL_INTERVAL}ms`);
 }
@@ -792,29 +908,48 @@ function stopPolling() {
     isPolling = false;
     
     if (elem.wifiButton) {
-        elem.wifiButton.classList.remove('wifi-connected');
+        elem.wifiButton.classList.remove('wifi-connected', 'wifi-polling');
         elem.wifiButton.classList.add('wifi-disconnected');
         elem.wifiButton.textContent = 'Wi-Fi (停止)';
     }
     console.log("Polling stopped.");
 }
 
+// カスタムモーダルを表示する関数
 function setApiUrl() {
-    // ユーザー要求に基づき、デフォルト値を設定
-    const defaultValue = pitMessageApiUrl || DEFAULT_API_URL;
-    
-    // NOTE: prompt()の使用は非推奨ですが、元のコードの構造を維持しています。
-    // 実際のアプリケーションでは、カスタムモーダルを使用してください。
-    const newUrl = prompt("PITメッセージ取得用のAPI URLを入力してください (例: http://192.168.4.1/message)", defaultValue);
-    
-    if (newUrl) {
+    if (!elem.apiModal) return;
+
+    // 現在の設定をインプットに反映
+    elem.apiUrlInput.value = pitMessageApiUrl || DEFAULT_API_URL;
+    elem.apiModal.style.display = 'flex';
+}
+
+function handleModalSave() {
+    const newUrl = elem.apiUrlInput.value.trim();
+    if (newUrl && newUrl.startsWith('http')) {
         localStorage.setItem(API_ENDPOINT_KEY, newUrl);
         pitMessageApiUrl = newUrl;
         displayPitMessage(`URLを設定しました: ${newUrl}`);
+        
+        // UIの更新
+        elem.wifiButton.textContent = 'Wi-Fi (準備OK)';
+        elem.wifiButton.classList.remove('wifi-disconnected', 'wifi-connected', 'wifi-polling');
+        
+        // モーダルを閉じてポーリングを開始
+        elem.apiModal.style.display = 'none';
+        startPolling(); 
         return true;
+    } else {
+        displayPitMessage('有効なURL (http://またはhttps://で始まる) を入力してください。', true);
+        return false;
     }
-    return false;
 }
+
+function handleModalCancel() {
+    elem.apiModal.style.display = 'none';
+    displayPitMessage('URLの設定をキャンセルしました。');
+}
+
 
 const clickWifiButton = () => {
     console.log("Wi-Fi button clicked");
@@ -822,12 +957,8 @@ const clickWifiButton = () => {
         stopPolling();
     } else {
         if (!pitMessageApiUrl || !pitMessageApiUrl.startsWith('http')) {
-            // URLが未設定または無効な場合、設定を促す
-            if (setApiUrl()) {
-                startPolling(); // URL設定に成功したらポーリング開始
-            } else {
-                displayPitMessage('URLの設定をキャンセルしました。');
-            }
+            // URLが未設定または無効な場合、設定モーダルを開く
+            setApiUrl();
         } else {
             startPolling(); // URLが設定済みならポーリング開始
         }
@@ -856,19 +987,27 @@ window.addEventListener('load', () => {
     elem.statusDisplay = document.getElementById('status-display');
     elem.debugInfo = document.getElementById('debugInfo');
     elem.startButton = document.getElementById('start');
-    elem.lapButton = document.getElementById('lap'); 
+    elem.lapButton = document.getElementById('lap');
     elem.gpsButton = document.getElementById('gpsButton');
     elem.getSettingsBtn = document.getElementById('getSettingsBtn');
     
-    elem.wifiButton = document.getElementById('wifiButton'); // Wi-Fiボタン
+    elem.wifiButton = document.getElementById('wifiButton');
     elem.pitMessageDisplay = document.getElementById('pitMessageDisplay');
 
+    // モーダル要素の取得とイベントリスナーの設定
+    elem.apiModal = document.getElementById('api-modal');
+    elem.apiUrlInput = document.getElementById('apiUrlInput');
+    elem.modalSave = document.getElementById('modal-save');
+    elem.modalCancel = document.getElementById('modal-cancel');
+
     if (elem.startButton) elem.startButton.addEventListener('click', clickStartSW);
-    if (elem.lapButton) elem.lapButton.addEventListener('click', clickLapSW); 
+    if (elem.lapButton) elem.lapButton.addEventListener('click', clickLapSW);
     if (elem.gpsButton) elem.gpsButton.addEventListener('click', clickGpsButton);
     if (elem.getSettingsBtn) elem.getSettingsBtn.addEventListener('click', getSettings);
-    
-    if (elem.wifiButton) elem.wifiButton.addEventListener('click', clickWifiButton); // Wi-Fiボタンのイベントリスナー
+    if (elem.wifiButton) elem.wifiButton.addEventListener('click', clickWifiButton);
+
+    if (elem.modalSave) elem.modalSave.addEventListener('click', handleModalSave);
+    if (elem.modalCancel) elem.modalCancel.addEventListener('click', handleModalCancel);
     
     updateButtonDisplay();
     totalTimePrint(0);
@@ -879,5 +1018,3 @@ window.addEventListener('load', () => {
 </body>
 
 </html>
-
-
