@@ -177,11 +177,9 @@
         .active-blue { background-color: #007aff !important; }
         .no-gps { background-color: #ff4d4d !important; }
 
-        /* Wi-Fi接続の状態を示すクラス */
+        /* Wi-Fiポーリングの状態を示すクラス */
         .wifi-disconnected { background-color: #ff4d4d !important; border-color: #993333;}
         .wifi-connected { background-color: #007aff !important; border-color: #0066cc;}
-        .wifi-connecting { background-color: #ffcc00 !important; border-color: #cc9900;}
-        .wifi-error { background-color: #ff0000 !important; border-color: #cc0000;} 
 
         /* debug-overlay */
         #debug-overlay {
@@ -272,7 +270,7 @@
         <button id="lap" class="button">LAP</button> 
         <button id="gpsButton" class="button no-gps">GPS</button>
         <button id="getSettingsBtn" class="button no-setting">GET</button>
-        <button id="wifiButton" class="button wifi-disconnected">Wi-Fi</button> 
+        <button id="wifiButton" class="button wifi-disconnected">Wi-Fi</button> <!-- BLEから変更 -->
     </div>
 
 </div>
@@ -282,18 +280,13 @@
 // ----------------------------------------------------
 // ★★★ WebSocket定数と変数 ★★★
 // ----------------------------------------------------
-// 以前のエラーメッセージの原因となった非セキュアなプロトコルに戻します。
-// ブラウザのセキュリティ設定を回避する必要がある可能性が高いです。
-const WS_PROTOCOL = 'ws'; // 'wss' -> 'ws'に戻す
-const WS_PORT = '80';     // '443' -> '80'に戻す
-const WS_PATH = '';        
-const API_ENDPOINT_KEY = 'pitMessageApiHost'; 
-
+const WS_URL_KEY = 'pitMessageWsUrl'; // WebSocket URLを保存するためのキー
 let socket = null;
-let retryCount = 0;
-let connectAttemptTimerId = null;
+let isWsConnected = false;
+let pitMessageWsUrl = ''; // ESP32のIPアドレスとポート81を想定 (例: 'ws://192.168.4.1:81/')
 
-// --- グローバル変数 (ストップウォッチ関連、変更なし) ---
+
+// --- グローバル変数 ---
 const SW_STATE = { STOP: 0, RUN: 1, PAUSE: 2 };
 let swState = SW_STATE.STOP;
 let startTime = 0;
@@ -326,10 +319,11 @@ const elem = {
     pitMessageDisplay: null
 };
 
+// GPSラップ計測用変数 - localStorageから読み込む
 let LAP_LINE_P1 = { lat: 0, lon: 0 };
 let LAP_LINE_P2 = { lat: 0, lon: 0 };
 
-// --- ストップウォッチ関連の関数（省略） ---
+// --- ストップウォッチ関連の関数（変更なし） ---
 const totalTimePrint = (time) => {
     let h = Math.floor(time / 3600000);
     let m = Math.floor((time % 3600000) / 60000);
@@ -467,6 +461,7 @@ const clickLapSW = () => {
     console.log("lap/reset button clicked");
     
     if (swState === SW_STATE.RUN) {
+        // RUN中はLAP機能
         lapCount++;
         const now = Date.now();
         const lapDuration = now - lapStartTime;
@@ -476,6 +471,7 @@ const clickLapSW = () => {
         startRealtimeLap();
         
     } else if (swState === SW_STATE.PAUSE) {
+        // PAUSE中はRESET機能
         resetStopwatch();
     }
     updateButtonDisplay();
@@ -550,26 +546,41 @@ const getSettings = () => {
         elem.getSettingsBtn.classList.add('no-setting');
     }
     
-    // --- WebSocket接続ホスト名の読み込み ---
-    const storedHost = localStorage.getItem(API_ENDPOINT_KEY);
-    if (storedHost) {
-        console.log(`Loaded WS Host/IP: ${storedHost}`);
+    // --- WebSocket URLの読み込み --- 
+    const storedWsUrl = localStorage.getItem(WS_URL_KEY);
+    if (storedWsUrl) {
+        pitMessageWsUrl = storedWsUrl;
+        console.log(`Loaded WebSocket URL: ${pitMessageWsUrl}`);
     } else {
-        console.log("WS Host/IP not set in localStorage.");
+        // デフォルト値として、ESP32 SoftAPの標準IPとWebSocketポートを設定
+        pitMessageWsUrl = 'ws://192.168.4.1:81/';
+        console.log("WebSocket URL not set in localStorage. Using default (ws://192.168.4.1:81/).");
     }
     
-    updateWifiButtonDisplay();
+    // Wi-Fiボタンの初期状態設定 
+    if (elem.wifiButton) {
+        if (pitMessageWsUrl) {
+            elem.wifiButton.textContent = 'Wi-Fi (準備OK)';
+            elem.wifiButton.classList.remove('wifi-disconnected');
+            elem.wifiButton.classList.remove('wifi-connected');
+        } else {
+            elem.wifiButton.textContent = 'Wi-Fi (未設定)';
+            elem.wifiButton.classList.remove('wifi-connected');
+            elem.wifiButton.classList.add('wifi-disconnected');
+        }
+    }
 };
 
 function onGpsPositionUpdate(position) {
     if (swState !== SW_STATE.RUN || !isGpsRunning) {
         return;
     }
-    // ... GPSロジック（変更なし）
+    
     const currentLat = position.coords.latitude;
     const currentLon = position.coords.longitude;
     const currentTime = Date.now();
     
+    // ヘルパー関数群（省略 - 元のコードから変更なし）
     const calculateDistance = (lat1, lon1, lat2, lon2) => {
         const R = 6371e3;
         const φ1 = lat1 * Math.PI / 180;
@@ -662,7 +673,7 @@ function onGpsPositionUpdate(position) {
         if (elem.display1) elem.display1.textContent = lapTimeToString(lapDuration);
 
         if (lapFixedDisplayTimeoutId) {
-             clearTimeout(lapFixedDisplayTimeoutId);
+            clearTimeout(lapFixedDisplayTimeoutId);
         }
         lapFixedDisplayTimeoutId = setTimeout(() => {
             if (swState === SW_STATE.RUN) {
@@ -689,227 +700,156 @@ function onGpsError(error) {
 }
 
 // ----------------------------------------------------
-// ★★★ WebSocket関連関数（プロトコル/ポート修正） ★★★
+// ★★★ WebSocket クライアント関数（Wi-Fiポーリング置き換え） ★★★
 // ----------------------------------------------------
 
-const updateWifiButtonDisplay = () => {
-    if (!elem.wifiButton) return;
-
-    if (socket && socket.readyState === WebSocket.OPEN) {
-        elem.wifiButton.classList.remove('wifi-disconnected', 'wifi-connecting', 'wifi-error');
-        elem.wifiButton.classList.add('wifi-connected');
-        elem.wifiButton.textContent = 'Wi-Fi (接続中)';
-    } else if (socket && socket.readyState === WebSocket.CONNECTING) {
-        elem.wifiButton.classList.remove('wifi-disconnected', 'wifi-connected', 'wifi-error');
-        elem.wifiButton.classList.add('wifi-connecting');
-        elem.wifiButton.textContent = `Wi-Fi (${WS_PROTOCOL}試行中)`; // プロトコルを表示
-    } else if (socket && socket.readyState === WebSocket.CLOSED) {
-        elem.wifiButton.classList.remove('wifi-connected', 'wifi-connecting');
-        elem.wifiButton.classList.add('wifi-disconnected', 'wifi-error');
-        elem.wifiButton.textContent = 'Wi-Fi (切断/エラー)';
-    } else {
-        const storedHost = localStorage.getItem(API_ENDPOINT_KEY);
-        elem.wifiButton.classList.remove('wifi-connected', 'wifi-connecting', 'wifi-error');
-        elem.wifiButton.classList.add('wifi-disconnected');
-        elem.wifiButton.textContent = storedHost ? `Wi-Fi (切断)` : 'Wi-Fi (未設定)';
-    }
-}
-
+// ピットメッセージの表示を制御する関数
 const displayPitMessage = (message, isError = false) => {
     if (elem.pitMessageDisplay) {
         const trimmedMessage = message ? message.trim() : '';
         
-        if (trimmedMessage === '' || trimmedMessage.toLowerCase() === 'なし' || trimmedMessage.toLowerCase() === 'clear') {
+        if (trimmedMessage === '' || trimmedMessage.toLowerCase() === 'なし' || trimmedMessage.toLowerCase() === 'welcome:') {
             elem.pitMessageDisplay.textContent = '';
             elem.pitMessageDisplay.style.display = 'none';
         } else {
-            elem.pitMessageDisplay.textContent = trimmedMessage;
+            // WELCOME: がプレフィックスされている場合は取り除く (前回のESP32コードと連携)
+            const displayMsg = trimmedMessage.startsWith('WELCOME:') ? trimmedMessage.substring(8).trim() : trimmedMessage;
+
+            elem.pitMessageDisplay.textContent = displayMsg; 
+            // エラー表示の場合は色を変える
+            elem.pitMessageDisplay.style.color = isError ? '#ff4d4d' : '#ffeb3b';
             elem.pitMessageDisplay.style.display = 'block';
-            if (isError) {
-                elem.pitMessageDisplay.style.color = '#ff4d4d'; // 赤色
-            } else {
-                elem.pitMessageDisplay.style.color = '#ffeb3b'; // 黄色
+            if (elem.debugInfo) {
+                const color = isError ? '#ff4d4d' : '#ffeb3b';
+                elem.debugInfo.innerHTML += `<br><span style="color: ${color};">[WS] ${displayMsg}</span>`;
             }
-        }
-        
-        if (elem.debugInfo) {
-            const color = isError || trimmedMessage.includes('エラー') || trimmedMessage.includes('失敗') ? '#ff4d4d' : '#999999';
-            const logEntry = `<br><span style="color: ${color};">[WS Log] ${trimmedMessage}</span>`;
-            
-            let currentLogs = elem.debugInfo.innerHTML;
-            const logLines = currentLogs.split('<br>').filter(line => !line.startsWith('GPS設定:'));
-            
-            if (logLines.length > 5) {
-                logLines.splice(1, logLines.length - 5); 
-            }
-            
-            // ログの先頭にGPSステータスを保持
-            const statusHtml = elem.statusDisplay ? elem.statusDisplay.outerHTML : '';
-            elem.debugInfo.innerHTML = statusHtml + '<p class="status-text">' + logLines.join('<br>') + '</p>' + logEntry;
         }
     }
 }
 
+// WebSocket接続処理
 function connectWebSocket() {
+    if (isWsConnected) return;
+    
+    if (!pitMessageWsUrl || !pitMessageWsUrl.startsWith('ws://')) {
+        displayPitMessage('WebSocket URLが設定されていません。', true);
+        return;
+    }
+
     if (socket && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) {
-        console.log('WebSocketは既に接続中または接続試行中です。');
+        console.log('WebSocket is already open or connecting.');
         return;
     }
     
-    const storedHost = localStorage.getItem(API_ENDPOINT_KEY);
-    if (!storedHost) {
-        displayPitMessage('Wi-Fiホストが未設定です', true);
-        updateWifiButtonDisplay();
-        return;
-    }
-
-    // 🚨 修正後のURL形式: ws://192.168.4.1:80/
-    const wsUrl = `${WS_PROTOCOL}://${storedHost}:${WS_PORT}${WS_PATH}`;
-    
-    if (connectAttemptTimerId) {
-        clearTimeout(connectAttemptTimerId);
-        connectAttemptTimerId = null;
-    }
-    
-    try {
-        socket = new WebSocket(wsUrl); 
-        
-        updateWifiButtonDisplay();
-        displayPitMessage(`接続試行中: ${wsUrl}`);
-        console.log(`WebSocket接続を試行中... ${wsUrl}`);
-
-        socket.onopen = function() {
-            console.log('✅ WebSocket接続確立');
-            retryCount = 0; 
-            updateWifiButtonDisplay();
-            displayPitMessage('WebSocket接続完了');
-        };
-
-        socket.onmessage = function(event) {
-            const message = event.data;
-            displayPitMessage(message);
-        };
-
-        socket.onclose = function(event) {
-            const shouldRetry = event.code !== 1000 && socket !== null;
-            
-            console.warn(`❌ WebSocket接続切断: コード ${event.code}, 理由: ${event.reason}`);
-            updateWifiButtonDisplay();
-            
-            if (shouldRetry) {
-                if (connectAttemptTimerId) {
-                    clearTimeout(connectAttemptTimerId);
-                }
-
-                const delay = Math.min(1000 * Math.pow(2, retryCount), 30000); 
-                retryCount++;
-                displayPitMessage(`接続エラー。${delay / 1000}秒後に再試行 (${retryCount}回目)`, true);
-                
-                connectAttemptTimerId = setTimeout(connectWebSocket, delay); 
-            } else {
-                displayPitMessage('Wi-Fi接続が終了しました');
-            }
-        };
-
-        socket.onerror = function(error) {
-            console.error('❌ WebSocketエラー:', error);
-            // 接続試行中の場合は、oncloseが呼ばれて再試行が走る
-        };
-
-    } catch (e) {
-        console.error('WebSocketの初期化中に致命的なエラーが発生しました:', e);
+    // 接続状態をリセット
+    if (socket) {
+        socket.onclose = null; // oncloseでの自動再接続を一時的に無効化
+        socket.onerror = null;
+        socket.close();
         socket = null;
-        // セキュリティエラーが再発した場合、その原因をより詳しくユーザーに伝えます
-        let errorMessage = `WebSocket初期化失敗: [${e.name}] URL形式を確認してください: ${wsUrl}`;
-        if (e.name === "SecurityError") {
-            errorMessage += `<br>🚨警告: このエラーは、https接続から非セキュアなws://への接続をブラウザがブロックしているため発生します。回避策については、技術サポートにご相談ください。`;
-        }
-        displayPitMessage(errorMessage, true);
-        updateWifiButtonDisplay();
     }
+
+    isWsConnected = false;
+    socket = new WebSocket(pitMessageWsUrl);
+    
+    displayPitMessage('WebSocket接続中...', false);
+    
+    // 接続成功時
+    socket.onopen = function() {
+        console.log('✅ WebSocket接続確立');
+        isWsConnected = true;
+        // 初回メッセージはESP32側で送信されるため、ここでは "接続完了" の表示はせず、
+        // 最初のメッセージが来るまで "WebSocket接続中..." または何も表示しない状態を維持
+        if (elem.wifiButton) {
+            elem.wifiButton.classList.remove('wifi-disconnected');
+            elem.wifiButton.classList.add('wifi-connected');
+            elem.wifiButton.textContent = 'Wi-Fi (OK)';
+        }
+    };
+
+    // メッセージ受信時 (ESP-NOWメッセージ)
+    socket.onmessage = function(event) {
+        let data = event.data;
+        console.log('Received message:', data);
+        
+        displayPitMessage(data); // 受信メッセージを表示
+    };
+
+    // 接続切断時
+    socket.onclose = function(event) {
+        console.warn('❌ WebSocket接続切断:', event.reason);
+        isWsConnected = false;
+        if (elem.wifiButton) {
+            elem.wifiButton.classList.remove('wifi-connected');
+            elem.wifiButton.classList.add('wifi-disconnected');
+            elem.wifiButton.textContent = 'Wi-Fi (切断)';
+        }
+        // 3秒後に自動再接続を試みる
+        setTimeout(connectWebSocket, 3000);
+        displayPitMessage('接続切断。再接続を試みます...', true);
+    };
+
+    // エラー発生時
+    socket.onerror = function(error) {
+        console.error('❌ WebSocketエラー:', error);
+        // エラー発生後、oncloseが呼ばれることが多い
+    };
 }
 
 function disconnectWebSocket() {
     if (socket) {
-        console.log("WebSocketを切断中...");
-        socket.onclose = function(event) {
-            console.log('✅ WebSocket明示的に切断されました');
-            if (connectAttemptTimerId) {
-                clearTimeout(connectAttemptTimerId);
-                connectAttemptTimerId = null;
-            }
-            socket = null;
-            retryCount = 0;
-            updateWifiButtonDisplay();
-            displayPitMessage('Wi-Fi接続停止');
-        }; 
-        socket.close(1000, 'User disconnect'); 
-    } else {
-        if (connectAttemptTimerId) {
-            clearTimeout(connectAttemptTimerId);
-            connectAttemptTimerId = null;
-        }
-        retryCount = 0;
-        updateWifiButtonDisplay();
-        displayPitMessage('Wi-Fi接続停止');
+        // oncloseによる自動再接続を防ぐため、イベントハンドラをnullにする
+        socket.onclose = null;
+        socket.onerror = null;
+        socket.close();
+        socket = null;
     }
+    isWsConnected = false;
+    if (elem.wifiButton) {
+        elem.wifiButton.classList.remove('wifi-connected');
+        elem.wifiButton.classList.add('wifi-disconnected');
+        elem.wifiButton.textContent = 'Wi-Fi (停止)';
+    }
+    displayPitMessage('WebSocket接続停止', false);
 }
 
-function setWsHost() {
-    // 既存のホスト設定があればそれをデフォルトにする
-    const currentHost = localStorage.getItem(API_ENDPOINT_KEY) || "192.168.4.1"; 
-    
-    // プロトコルとポート情報をプロンプトに追加して、現在の設定を表示
-    const promptMessage = `Wi-Fi接続先ホスト/IPアドレスを入力してください (例: 192.168.4.1)\n\n現在のプロトコル: ${WS_PROTOCOL}\n現在のポート: ${WS_PORT}\n\n⚠️注意: ws://への接続はブラウザにブロックされる可能性があります。`;
-
-    let newHost = prompt(promptMessage, currentHost);
-    
-    if (newHost) {
-        newHost = newHost.trim().replace(/^(https?|wss?):\/\//i, '');
-        let parts = newHost.split('/');
-        newHost = parts[0]; 
-
-        if (!newHost.match(/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}(:\d+)?$/)) {
-             displayPitMessage("IPアドレスまたはホスト名の形式が無効です。", true);
-             return false;
-        }
-
-        // ポート番号はWS_PORT定数で管理するため、ホスト名部分のみを保存
-        let hostOnly = newHost.split(':')[0];
-        
-        localStorage.setItem(API_ENDPOINT_KEY, hostOnly);
-
-        displayPitMessage(`ホスト設定完了: ${hostOnly} (プロトコル: ${WS_PROTOCOL}, ポート: ${WS_PORT})`);
+function setWsUrl() {
+    const defaultUrl = 'ws://192.168.4.1:81/';
+    const newUrl = prompt(`PITメッセージ受信用のWebSocket URLを入力してください (例: ${defaultUrl})`, pitMessageWsUrl || defaultUrl);
+    if (newUrl) {
+        localStorage.setItem(WS_URL_KEY, newUrl);
+        pitMessageWsUrl = newUrl;
+        displayPitMessage(`URLを設定しました: ${newUrl}`);
         return true;
     }
     return false;
 }
 
 const clickWifiButton = () => {
-    console.log("Wi-Fi button clicked");
-    
-    if (socket && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) {
+    console.log("Wi-Fi button clicked (WebSocket)");
+    if (isWsConnected) {
         disconnectWebSocket();
     } else {
-        const storedHost = localStorage.getItem(API_ENDPOINT_KEY);
-        
-        if (!storedHost) {
-            if (setWsHost()) {
-                connectWebSocket(); 
+        if (!pitMessageWsUrl || !pitMessageWsUrl.startsWith('ws://')) {
+            // URLが未設定または無効な場合、設定を促す
+            if (setWsUrl()) {
+                connectWebSocket(); // URL設定に成功したら接続開始
             } else {
-                displayPitMessage('ホストの設定をキャンセルしました。');
+                displayPitMessage('URLの設定をキャンセルしました。', true);
             }
         } else {
-            connectWebSocket(); 
+            connectWebSocket(); // URLが設定済みなら接続開始
         }
     }
 };
+
 
 // ----------------------------------------------------
 // ★★★ 初期化処理（loadイベント） ★★★
 // ----------------------------------------------------
 
 window.addEventListener('load', () => {
+    // Service Workerの登録（PWAとして動作させる場合）
     if ('serviceWorker' in navigator) {
         navigator.serviceWorker.register('/service-worker.js')
             .then(registration => {
@@ -938,16 +878,17 @@ window.addEventListener('load', () => {
     if (elem.gpsButton) elem.gpsButton.addEventListener('click', clickGpsButton);
     if (elem.getSettingsBtn) elem.getSettingsBtn.addEventListener('click', getSettings);
     
-    if (elem.wifiButton) elem.wifiButton.addEventListener('click', clickWifiButton); 
+    if (elem.wifiButton) elem.wifiButton.addEventListener('click', clickWifiButton); // Wi-Fiボタンのイベントリスナー
     
     updateButtonDisplay();
     totalTimePrint(0);
     if (elem.display1) elem.display1.textContent = '00:00.000';
-    getSettings(); 
-    
-    // デバッグ情報パネルを表示
-    const debugOverlay = document.getElementById('debug-overlay');
-    if (debugOverlay) debugOverlay.style.display = 'block'; 
+    getSettings(); // GPS設定とWebSocket URLの読み込み
+
+    // ページロード時に自動的にWebSocket接続を試みる
+    if (pitMessageWsUrl) {
+        connectWebSocket();
+    }
 });
 </script>
 </body>
